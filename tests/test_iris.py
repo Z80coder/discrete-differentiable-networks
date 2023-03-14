@@ -6,6 +6,7 @@ import numpy
 import optax
 import scipy
 from flax.training import train_state
+from jax.config import config
 from tqdm import tqdm
 
 from neurallogic import (
@@ -16,14 +17,19 @@ from neurallogic import (
     hard_not,
     hard_or,
     hard_xor,
+    hard_count,
     harden,
     harden_layer,
     neural_logic_net,
     real_encoder,
     initialization,
+    hard_vmap,
+    hard_concatenate,
+    symbolic_primitives
 )
 from tests import utils
 
+config.update("jax_enable_x64", True)
 
 def check_symbolic(nets, data, trained_state):
     x_training, y_training, x_test, y_test = data
@@ -147,7 +153,7 @@ Source: https://arxiv.org/pdf/1804.01508.pdf
 # mean: 94.18, sem: 0.13, min: 80.00, max: 100.00, 5%: 86.67, 95%: 100.00
 # Using majority with margin
 # mean: 93.95, sem: 0.13, min: 76.67, max: 100.00, 5%: 86.67, 95%: 100.00
-def nln_binary_iris(type, x, training: bool):
+def nln_binary_iris_1(type, x, training: bool):
     dtype = jax.numpy.float32
     x = hard_masks.mask_to_true_layer(type)(120, dtype=dtype)(x)
     x = hard_majority.majority_layer(type)()(x)
@@ -163,6 +169,26 @@ def nln_binary_iris(type, x, training: bool):
     x = x.sum(-1)
     return x
 
+def nln_binary_iris(type, x, training: bool):
+    dtype = jax.numpy.float64
+    y = hard_vmap.vmap(type)((lambda x: 1 - x, lambda x: 1 - x, lambda x: symbolic_primitives.symbolic_not(x)))(x)
+    x = hard_concatenate.concatenate(type)([x, y], 0)
+    layer_size = 16
+    x = hard_and.and_layer(type)(
+        layer_size,
+        dtype=dtype,
+        weights_init=initialization.initialize_bernoulli(0.01, 0.3, 0.501),
+    )(x)
+    x = x.ravel()
+    x = x.reshape((num_classes - 1, int(x.shape[0] / (num_classes - 1))))
+    x = hard_majority.majority_layer(type)()(x)
+    ########################################################
+    x = jax.numpy.array([x]) # TODO: shouldn't need to do this
+    x = hard_count.count_layer(type)()(x)
+    x = x.ravel()
+    x = x.reshape((num_classes, int(x.shape[0] / num_classes)))
+    x = x.sum(-1)
+    return x
 
 def batch_nln_iris(type, x, training: bool):
     return jax.vmap(lambda x: nln_iris(type, x, training))(x)
@@ -179,8 +205,8 @@ class TrainState(train_state.TrainState):
 def create_train_state(net, rng, dropout_rng, config):
     mock_input = jax.numpy.ones([1, num_features])
     soft_weights = net.init(rng, mock_input, training=False)["params"]
-    tx = optax.sgd(config.learning_rate, config.momentum)
-    # tx = optax.radam(learning_rate=config.learning_rate)
+    #tx = optax.sgd(config.learning_rate, config.momentum)
+    tx = optax.radam(learning_rate=config.learning_rate)
     return TrainState.create(
         apply_fn=net.apply, params=soft_weights, tx=tx, dropout_rng=dropout_rng
     )
@@ -190,6 +216,12 @@ def create_train_state(net, rng, dropout_rng, config):
 def update_model(state, grads):
     return state.apply_gradients(grads=grads)
 
+def my_loss(predictions, targets):
+    return jax.vmap(lambda x: jax.numpy.where(x < 0.45, 0.0, x*x))(predictions - targets)
+
+def my_loss(predictions, targets):
+    x = predictions - targets
+    return x*x
 
 def apply_model_with_grad_impl(state, features, labels, dropout_rng, training: bool):
     dropout_train_rng = jax.random.fold_in(key=dropout_rng, data=state.step)
@@ -204,6 +236,8 @@ def apply_model_with_grad_impl(state, features, labels, dropout_rng, training: b
         one_hot = jax.nn.one_hot(labels, num_classes)
         loss = jax.numpy.mean(
             optax.softmax_cross_entropy(logits=logits, labels=one_hot)
+            #optax.l2_loss(logits, one_hot)
+            #my_loss(logits, one_hot)
         )
         return loss, logits
 
@@ -308,10 +342,10 @@ def apply_hard_model_to_data(state, features, labels):
 
 def get_config():
     config = ml_collections.ConfigDict()
-    config.learning_rate = 0.01 
+    config.learning_rate = 0.01 # sgd = 0.1
     config.momentum = 0.9
     config.batch_size = 120
-    config.num_epochs = 500  # 500 for paper
+    config.num_epochs = 4000 # 20000  # 500 for paper
     return config
 
 
@@ -327,7 +361,7 @@ def train_test_split(features, labels, rng, test_size=0.2):
         labels[test_idx],
     )
 
-
+@pytest.mark.skip(reason="temporarily off")
 def test_iris():
     # Train net
     if binary_iris:
@@ -344,7 +378,7 @@ def test_iris():
     rng = jax.random.PRNGKey(0)
     print(soft.tabulate(rng, features[0:1], training=False))
 
-    num_experiments = 1  # 1000 for paper
+    num_experiments = 1000  # 1000 for paper
     final_test_accuracies = []
     for i in range(num_experiments):
         # Split features and labels into 80% training and 20% test

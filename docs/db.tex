@@ -1,0 +1,367 @@
+
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2021_conference,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{amsthm}
+\usepackage{graphicx}
+\usepackage{comment}
+
+\title{$\partial\mathbb{B}$ nets: learning boolean functions with\\backpropagation}
+
+% Authors must not appear in the submitted version. They should be hidden
+% as long as the \iclrfinalcopy macro remains commented out below.
+% Non-anonymous submissions will be rejected without review.
+
+\author{Ian Wright \thanks{GitHub, Z80coder@github.com}
+}
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem*{definition}{Definition}
+\newtheorem{prop}{Proposition}
+\newtheorem{lemma}{Lemma}
+
+
+\iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+	$\partial\mathbb{B}$ nets are differentiable neural networks 
+	that learn discrete boolean functions by backpropagation.
+	$\partial\mathbb{B}$ nets, once trained, `harden' to boolean functions with identical semantics and therefore, unlike existing approaches to neural network binarization, retain their accuracy. Experiments demonstrate that $\partial\mathbb{B}$ nets achieve competitive performance on standard machine learning problems yet are significantly more compact (due to 1-bit weights) and interpretable (due to the logical nature of the learnt function).
+\end{abstract}
+
+\section{Introduction}
+
+\section{Related work}
+
+\section{$\partial\mathbb{B}$ nets}
+
+\begin{definition}[Soft-bits and hard-bits]
+A {\em soft-bit} is a real value in the range $[0,1]$ and a {\em hard-bit} is a boolean value from the set $\{0,1\}$. A soft-bit, $x$, is {\em high} if $x>1/2$, otherwise it is {\em low}.
+\end{definition}
+
+\begin{definition}[Hardening]
+The {\em hardening} function, $h(x_{1}, \dots, x_{n}) = [f(x_{1}), \dots, f(x_{n})]$, converts soft-bits to hard-bits, where
+\begin{equation*}
+f(x) =
+\begin{cases}
+1 & \text{if } x > 1/2 \\
+0 & \text{otherwise.}
+\end{cases}
+\end{equation*}
+\end{definition}
+
+\begin{definition}[Hard-equivalence]
+	A function, $f: [0,1]^n \rightarrow [0,1]^m$, is {\em hard-equivalent} to a boolean function, $g: \{1,0\}^n \rightarrow \{1,0\}^m$,	if
+	$h(f(h({\bf x}))) = g(h({\bf x}))$ for all ${\bf x} \in [0,1]^{n}$.
+\end{definition}
+
+\subsection{Differentiable boolean functions}
+
+Weights are trainable soft-bits. A high weight implies the corresponding operation is masked out and therefore inactive.
+
+Define
+	\begin{equation*}
+	\begin{aligned}
+	\partial\text{NOT}: [0, 1]^{2} &\to [0,1], \\
+	(w, x) &\mapsto 1 - w + x (2w - 1)\text{,}
+	\end{aligned}
+	\end{equation*}
+where $w$ is a weight and $x$ is a soft-bit value.
+$\partial${NOT} is hard-equivalent to the boolean function $\neg(x \oplus w)$ (proposition \ref{prop:not}). If the weight is high then $\partial${NOT} is hard-equivalent to the boolean identity function; otherwise it is hard-equivalent to $\neg$. In consequence, we can learn to logically not, or simply pass through, the input value $x$.
+
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{AND}: [0,1]^{2} &\to [0,1], \\
+	(x, y) &\mapsto 
+	\begin{cases}
+	1/2 + 1/2(x + y)(m - 1/2) & \text{if } 2m > 1 \\
+	m + 1/2(x + y)(1/2 - m) & \text{otherwise,}
+	\end{cases}
+\end{aligned}
+\end{equation*}
+where $m=\min(x,y)$, and $x$ and $y$ are soft-bit values.
+$\partial${AND} is hard-equivalent to the boolean function $x \wedge y$ (proposition \ref{prop:and}).
+
+Define 
+\begin{equation*}
+\begin{aligned}
+\partial\text{OR}: [0,1]^{2} &\to [0,1], \\
+(x, y) &\mapsto 
+\begin{cases}
+	1/2 + 1/2(x + y)(m - 1/2) & \text{if } 2m > 1 \\
+m + 1/2(x + y)(1/2 - m) & \text{otherwise,}
+\end{cases}
+\end{aligned}
+\end{equation*}
+where $m=\max(x,y)$, and $x$ and $y$ are soft-bit values.
+$\partial${OR} is hard-equivalent to the boolean function $x \vee y$ (proposition \ref{prop:or}).
+
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{IMPLIES}: [0,1]^{2} &\to [0,1],\\
+(w, x) &\mapsto \partial\text{OR}(x, 1-w)\text{,}
+\end{aligned}
+\end{equation*}
+where $w$ is a weight and $x$ is a soft-bit value.
+$\partial${IMPLIES} is hard-equivalent to the boolean function $w \Rightarrow x$ (proposition \ref{prop:implies}).
+
+Define $\operatorname{majority-index}: \mathbb{Z}_{>0} \to \mathbb{Z}_{> 0}$ as $n \mapsto 1 + \lfloor \frac{n-1}{2}\rfloor$. 
+
+Define $\operatorname{select}: [0,1]^n \times {1, 2, \ldots, n} \to [0,1]$ as  $({\bf x}, i) \mapsto x_{i}$.
+
+Define $\operatorname{majority-bit}: [0,1]^n \to [0,1]$ as  ${\bf x} \mapsto \operatorname{select}( \operatorname{sort}({\bf x}), \operatorname{majority-index}(\lvert{\bf x}\rvert))$, where $\operatorname{sort}({\bf x})$ sorts the elements of ${\bf x}$ in ascending order.
+
+Define $\operatorname{majority-delta}: [0,1]^n \to [0,1]$ as
+${\bf x} \mapsto \bar{\bf x} \times \left| \operatorname{majority-bit}({\bf x}) - 1/2\right|$.
+
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{MAJORITY}: [0,1]^{n} &\to [0,1], \\
+{\bf x} &\mapsto 
+	\begin{cases}
+	1/2 + \delta & \text{if } m > 1/2 \\
+	m + \delta & \text{otherwise,}
+	\end{cases}
+\end{aligned}
+\end{equation*}
+where ${\bf x}$ is a vector of soft-bits, $m = \operatorname{majority-bit}({\bf x})$ and $\delta = \operatorname{majority-delta}({\bf x})$.
+$\partial${MAJORITY} is hard-equivalent to the boolean majority function (proposition \ref{prop:majority}).
+
+\subsection{Logical layers}
+
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{NOT-LAYER}: [0,1]^{n \times m} \times [0,1]^{m} &\to [0,1]^{n \times m}, \\
+({\bf W}, {\bf x}) &\mapsto 
+\begin{bmatrix}
+\partial\text{NOT}(w_{1,1}, x_{1}) & \dots & \partial\text{NOT}(w_{1,m}, x_{m}) \\
+\vdots & \ddots & \vdots \\
+\partial\text{NOT}(w_{n,1}, x_{1}) & \dots & \partial\text{NOT}(w_{n,m}, x_{m})
+\end{bmatrix}
+\end{aligned}
+\end{equation*}
+where ${\bf W}$ is a matrix of weights and ${\bf x}$ is a vector of soft-bits.
+
+%[\partial\text{NOT}({\bf W}_{1}, {\bf x}), \dots, \partial\text{NOT}({\bf W}_{n}, {\bf x})]
+
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{AND-NEURON}: [0,1]^{n} \times [0,1]^{n} &\to [0,1], \\
+({\bf w}, {\bf x}) &\mapsto \min(\partial\text{IMPLIES}(w_{1}, x_{1}), \dots, \partial\text{IMPLIES}(w_{n}, x_{n}))\text{,}
+\end{aligned}
+\end{equation*}
+where ${\bf w}$ is vector of weights and ${\bf x}$ is a vector of soft-bits. A single AND neuron maps $n$ soft-bit inputs to a single soft-bit value. A $\partial\text{AND-LAYER}$ of $n$ neurons maps $m$ soft-bit inputs to $n$ soft-bit outputs.
+
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{OR-NEURON}: [0,1]^{n} \times [0,1]^{n} &\to [0,1], \\
+({\bf w}, {\bf x}) &\mapsto \max(\partial\text{AND}(w_{1}, x_{1}), \dots, \partial\text{AND}(w_{n}, x_{n}))\text{.}
+\end{aligned}
+\end{equation*}
+A single OR neuron maps $n$ soft-bit inputs to a single soft-bit value. A $\partial\text{OR-LAYER}$ of $n$ neurons maps $m$ soft-bit inputs to $n$ soft-bit outputs.
+
+\subsection{Architectures}
+
+todo: architectures
+
+\section{Experiments}
+
+\subsection{Binary Iris}
+
+\subsection{Noisy XOR}
+
+The noisy XOR dataset \citep{noisy-xor-dataset} is an adversarial parity problem with noisy non-informative features. The dataset consists of 10K examples with 12 boolean inputs and a target label (where 0 = odd and 1 = even) that is a XOR function of 2 inputs. The remaining 10 inputs are entirely random. We train on 50\% of the data where, additionally, 40\% of the labels are inverted.
+
+\begin{figure}[t]
+	\centering
+	\includegraphics[width=0.8\textwidth]{noisy-xor-architecture.png}
+	\caption{{\em A $\partial\mathbb{B}$ net for the noisy-xor problem}. The net concatenates the soft-bit input, ${\bf x}$ (length 12), with its negation, ${\bf 1 - x}$, and supplies the resulting vector (length 24) to a $\partial\text{AND-LAYER}$ (width 32), $\partial\text{OR-LAYER}$ (width 32),  $\partial\text{NOT-LAYER}$ (width 16), and a final $\partial\text{MAJORITY}$ to produce a single soft-bit $y \in [0,1]$ (to predict odd parity) and its negation $1-y$ (to predict even parity). The net's weights, once hardened, consume $288$ bytes.}
+	\label{fig:noisy-xor-architecture}
+\end{figure}
+
+We initialized the network described in figure \ref{fig:noisy-xor-architecture} using the XX policy and then trained for 2000 epochs with the RAdam optimizer \citep{Liu2020On} and softmax cross-entropy loss. We measure the accuracy of the final net on the test data (to avoid handpicking the best configuration). Table \ref{tab:noisy-xor-results} compares the $\partial\mathbb{B}$ net against other classifiers \citep{granmo18} and reports the mean accuracy with 95\% confidence intervals obtained over 100 replications of the experiment with different random seeds. 
+
+\begin{table}[h]
+	\centering
+	\begin{tabular}{llllll}
+		\cline{2-6}
+		\multicolumn{1}{c}{}                       & \multicolumn{5}{c}{\textbf{accuracy}}                                                                                                                                                            \\ \cline{2-6} 
+		\multicolumn{1}{l|}{}                      & \multicolumn{1}{l|}{mean}                  & \multicolumn{1}{l|}{5 \%ile}       & \multicolumn{1}{l|}{95 \%ile}       & \multicolumn{1}{l|}{min}           & \multicolumn{1}{l|}{max}            \\ \hline
+		\multicolumn{1}{|l|}{Tsetlin}              & \multicolumn{1}{l|}{99.3 +/- 0.3}          & \multicolumn{1}{l|}{95.9}          & \multicolumn{1}{l|}{100.0}          & \multicolumn{1}{l|}{91.6}          & \multicolumn{1}{l|}{100.0}          \\ \hline
+		\multicolumn{1}{|l|}{$\partial\mathbb{B}$} & \multicolumn{1}{l|}{\textbf{97.9 +/- 0.2}} & \multicolumn{1}{l|}{\textbf{95.4}} & \multicolumn{1}{l|}{\textbf{100.0}} & \multicolumn{1}{l|}{\textbf{93.6}} & \multicolumn{1}{l|}{\textbf{100.0}} \\ \hline
+		\multicolumn{1}{|l|}{neural network}       & \multicolumn{1}{l|}{95.4 +/- 0.5}          & \multicolumn{1}{l|}{90.1}          & \multicolumn{1}{l|}{98.6}           & \multicolumn{1}{l|}{88.2}          & \multicolumn{1}{l|}{99.9}           \\ \hline
+		\multicolumn{1}{|l|}{SVM}                  & \multicolumn{1}{l|}{58.0 +/- 0.3}          & \multicolumn{1}{l|}{56.4}          & \multicolumn{1}{l|}{59.2}           & \multicolumn{1}{l|}{55.4}          & \multicolumn{1}{l|}{66.5}           \\ \hline
+		\multicolumn{1}{|l|}{naive Bayes}          & \multicolumn{1}{l|}{49.8 +/- 0.2}          & \multicolumn{1}{l|}{48.3}          & \multicolumn{1}{l|}{51.0}           & \multicolumn{1}{l|}{41.3}          & \multicolumn{1}{l|}{52.7}           \\ \hline
+		\multicolumn{1}{|l|}{logistic regression}  & \multicolumn{1}{l|}{49.8 +/- 0.3}          & \multicolumn{1}{l|}{47.8}          & \multicolumn{1}{l|}{51.1}           & \multicolumn{1}{l|}{41.1}          & \multicolumn{1}{l|}{53.1}           \\ \hline
+	\end{tabular}
+	\caption{{\em Noisy-XOR results}}
+	\label{tab:noisy-xor-results}
+\end{table}
+
+The high noise causes logistic regression and naive Bayes to randomly guess. The SVM hardly performs better. In constrast, the multilayer neural network, Tsetlin machine \citep{granmo18}, and  $\partial\mathbb{B}$ net all successfully learn the underlying XOR signal. The Tsetlin machine performs best on this problem, with the $\partial\mathbb{B}$ net second.
+
+todo: can Tsetlin machines be chained in differentiable architectures?
+
+\subsection{MNIST}
+
+\section{Conclusion}
+
+
+\subsubsection*{Acknowledgments}
+Use unnumbered third level headings for the acknowledgments. All
+acknowledgments, including those to funding agencies, go at the end of the paper.
+
+
+\bibliographystyle{iclr2021_conference}
+\bibliography{db}
+
+\appendix
+
+\section*{Appendix}
+
+\section{Proofs}
+
+\begin{prop}\label{prop:not}
+	$\partial${NOT} is hard-equivalent to the boolean function
+	$\neg (x \oplus w)$.
+\begin{proof}
+	Table \ref{not-table} is the truth table of the boolean function $\neg (x \oplus w)$.
+	\begin{table}
+		\begin{center}
+			\begin{tabular}{lll}
+				\multicolumn{1}{c}{$h(w)$}  &\multicolumn{1}{c}{$h(x)$} &\multicolumn{1}{c}{$\partial\text{NOT}(h(w), h(x))$}
+				\\ \hline \\
+				0 & 0 & 1\\
+				1 & 0 & 0\\
+				0 & 1 & 0\\
+				1 & 1 & 1\\
+			\end{tabular}
+		\end{center}
+		\caption{$\partial${NOT} is hard-equivalent to $\neg (x \oplus w)$.}\label{not-table}
+		
+	\end{table}
+\end{proof}
+\end{prop}
+
+
+\begin{prop}\label{prop:and}
+	$\partial${AND} is hard-equivalent to the boolean function $x \wedge y$.
+\begin{proof}
+	Table \ref{and-table} is the truth table of the boolean function $x \wedge y$.
+	\begin{table}
+		\begin{center}
+			\begin{tabular}{llll}
+				\multicolumn{1}{c}{$h(x)$}  &\multicolumn{1}{c}{$h(y)$} &\multicolumn{1}{c}{$\partial\text{AND}(h(x), h(y))$} &\multicolumn{1}{c}{$h(\partial\text{AND}(h(x), h(y)))$}
+				\\ \hline \\
+				1 & 1 & 1 & 1\\
+				1 & 0 & 1/4 & 0\\
+				0 & 1 & 1/4 & 0\\
+				0 & 0 & 0 & 0\\
+			\end{tabular}
+		\end{center}
+		\caption{$\partial${AND} is hard-equivalent to $x \wedge y$.}\label{and-table}
+		
+	\end{table}
+\end{proof}
+\end{prop}
+
+\begin{prop}\label{prop:or}
+	$\partial${OR} is hard-equivalent to the boolean function $x \vee y$.
+\begin{proof}
+	Table \ref{or-table} is the truth table of the boolean function $x \vee y$.
+	\begin{table}
+		\begin{center}
+			\begin{tabular}{llll}
+				\multicolumn{1}{c}{$h(x)$}  &\multicolumn{1}{c}{$h(y)$} &\multicolumn{1}{c}{$\partial\text{OR}(h(x), h(y))$} &\multicolumn{1}{c}{$h(\partial\text{OR}(h(x), h(y)))$}
+				\\ \hline \\
+				1 & 1 & 1 & 1\\
+				1 & 0 & 3/4 & 1\\
+				0 & 1 & 3/4 & 1\\
+				0 & 0 & 0 & 0\\
+			\end{tabular}
+		\end{center}
+		\caption{$\partial${OR} is hard-equivalent to $x \vee y$.}\label{or-table}
+		
+	\end{table}
+\end{proof}
+\end{prop}
+
+\begin{prop}\label{prop:implies}
+	$\partial${IMPLIES} is hard-equivalent to the boolean function $w \Rightarrow x$.
+\begin{proof}
+	Table \ref{implies-table} is the truth table of the boolean function $x \Rightarrow y$.
+	\begin{table}
+		\begin{center}
+			\begin{tabular}{llll}
+				\multicolumn{1}{c}{$h(w)$}  &\multicolumn{1}{c}{$h(x)$} &\multicolumn{1}{c}{$\partial\text{IMPLIES}(h(w), h(x))$} &\multicolumn{1}{c}{$h(\partial\text{IMPLIES}(h(w), h(x)))$}
+				\\ \hline \\
+				1 & 1 & 3/4 & 1\\
+				1 & 0 & 0 & 0\\
+				0 & 1 & 1 & 1\\
+				0 & 0 & 3/4 & 1\\
+			\end{tabular}
+		\end{center}
+		\caption{$\partial${IMPLIES} is hard-equivalent to $w \Rightarrow x$.}\label{implies-table}
+		
+	\end{table}
+\end{proof}
+\end{prop}
+
+\begin{lemma}
+$\operatorname{majority-bit}$ is hard-equivalent to the boolean majority function.
+\begin{proof}
+	The boolean majority function,
+\begin{equation*}
+\text{MAJ}(x_{1}, \dots, x_{n}) = 
+\begin{cases}
+1 & \text{if } \sum_{i=1}^{n} x_{i} \geq n/2 \\
+0 & \text{otherwise.}
+\end{cases}
+\end{equation*}
+\end{proof}
+\end{lemma}
+
+\begin{prop}\label{prop:majority}
+	$\partial${MAJORITY} is hard-equivalent to the boolean majority function.
+\begin{proof}
+	todo
+\end{proof}
+\end{prop}
+
+
+\end{document}
+
+\begin{comment}
+Define
+\begin{equation*}
+\begin{aligned}
+\partial\text{AND-LAYER}: [0,1]^{n \times m} \times [0,1]^{m} &\to [0,1]^{n}, \\
+({\bf W}, {\bf x}) &\mapsto [\partial\text{AND-NEURON}({\bf W}_{1}, {\bf x}), \dots, \partial\text{AND-NEURON}({\bf W}_{n}, {\bf x})]
+\end{aligned}
+\end{equation*}
+\end{comment}
